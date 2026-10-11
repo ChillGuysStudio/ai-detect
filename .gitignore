@@ -1,0 +1,17 @@
+**/node_modules/**
+**/dist/**
+**/build/**
+**/coverage/**
+**/tmp/**
+**/logs/**
+**/.DS_Store
+**/.playwright-mcp/
+**/frontend-dist/
+**/inputs/
+**/results/
+**/scripts/
+**/*.py
+**/REPORT.md
+**/sample.txt
+**/requirements.txt
+**/result*.json

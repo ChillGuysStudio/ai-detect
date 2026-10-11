@@ -1,0 +1,22 @@
+{
+  "name": "ai-detect",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "plagiarismcheck.org AI detector automation (Bun + TypeScript)",
+  "scripts": {
+    "cli": "bun run src/cli.ts",
+    "build": "bun build src/cli.ts --target=bun --outfile=dist/ai-detect",
+    "ab": "bun run scripts/ab-test.ts",
+    "gen-inputs": "bun run scripts/gen-inputs.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.13.13",
+    "pdfjs-dist": "^6.4.299",
+    "playwright-core": "^1.49.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.2",
+    "typescript": "^5.7.0"
+  }
+}
