@@ -4,6 +4,11 @@ Upload text or PDF → split into ≤550-word chunks → each chunk checked agai
 plagiarismcheck.org's TraceGPT AI detector → live progress + per-chunk results
 → word-weighted aggregate report (on screen + JSON for AI processing).
 
+Upload several files at once: they queue as one batch (one job per file),
+each with live progress. Click a file to preview it — PDFs open the page
+overview (all included, click to ignore, 🔍 to zoom), text files show an
+excerpt. Only selected PDF pages are extracted and queued.
+
 ## Quick start (Docker — recommended)
 
 ```bash
@@ -12,11 +17,19 @@ docker run -p 3000:3000 ai-detect
 # open http://localhost:3000
 ```
 
+The image bundles everything (Bun runtime, Chromium for token minting,
+tesseract + poppler for PDF/OCR) — the host needs only Docker, no browser,
+no Node, nothing else.
+
 Share with friends: run it on your VPS/home server and give them the URL.
 No logins — one global queue (concurrency 1) keeps the upstream IP safe.
-Optional: `docker run -e CAPSOLVER_KEY=...` as token fallback,
-`-e CHUNK_CONCURRENCY=10 -e TOKEN_CONCURRENCY=10` for max parallelism
-(watch for upstream throttling), `-e SUBMIT_GAP_MS=1500` to tune politeness.
+Optional: `docker run -e CAPSOLVER_KEY=...` as token fallback.
+Tune with env (see `.env.example`; Bun loads `.env` automatically,
+Dockerfile values are the fallback when absent):
+`CHUNK_CONCURRENCY` (default 5, max 10 — chunks across all files share one
+pool, so a 3-chunk file and a 1-chunk file overlap),
+`TOKEN_CONCURRENCY` (defaults to chunk concurrency),
+`SUBMIT_GAP_MS` (default 1500 — shared politeness gap between submits).
 
 ## Dev
 
@@ -25,6 +38,10 @@ bun install
 bun run src/server.ts        # API + frontend on :3000 (serve ./frontend-dist)
 cd frontend && bun install && bun run dev   # Vite dev (proxies /api to :3000)
 ```
+
+Local dev needs a Chrome/Chromium on PATH (or `bunx playwright install
+chromium`): token minting tries `CHROME_EXECUTABLE`, then `channel: "chrome"`,
+then Playwright's bundled browser. Docker users never touch this.
 
 ## How it works
 

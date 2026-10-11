@@ -1,6 +1,84 @@
+/* Design tokens — emil-design-eng rules:
+ * custom ease-out curves (never bare `ease`), transform+opacity only,
+ * semi-transparent layered shadows instead of flat solid borders. */
+:root {
+	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+	--ink: #101840;
+	--ink-soft: #474d66;
+	--ink-faint: #666d84;
+	--accent: #2952cc;
+	--accent-ink: #fff;
+	--danger: #d64545;
+	--ok: #2f9e44;
+	--warn: #f0a020;
+
+	--surface: #fff;
+	--surface-soft: #fafbfe;
+	--page: #f4f6fb;
+	--line: rgba(16, 24, 64, 0.1);
+	--shadow-sm: 0 1px 2px rgba(16, 24, 64, 0.06), 0 2px 8px rgba(16, 24, 64, 0.06);
+	--shadow-md: 0 2px 4px rgba(16, 24, 64, 0.06), 0 12px 32px rgba(16, 24, 64, 0.12);
+
+	--radius: 12px;
+	--radius-sm: 8px;
+}
+
+/* Reserve the scrollbar gutter up front: the page must not shift sideways
+ * when content grows past the viewport and the scrollbar appears. */
+html {
+	scrollbar-gutter: stable;
+}
+
 code {
 	font-family: ui-monospace, monospace;
 	background: #eef1f8;
 	padding: 1px 5px;
 	border-radius: 4px;
+}
+
+/* Pressable elements give instant feedback — scale, never just color. */
+button {
+	transition:
+		transform 150ms var(--ease-out),
+		background-color 150ms ease,
+		box-shadow 150ms var(--ease-out);
+}
+button:active:not([disabled]) {
+	transform: scale(0.97);
+}
+button[disabled] {
+	opacity: 0.6;
+	cursor: default;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+/* Hover motion only where hover is real (no sticky tap states on touch). */
+@media (hover: hover) and (pointer: fine) {
+	.lift {
+		transition:
+			transform 180ms var(--ease-out),
+			box-shadow 180ms var(--ease-out);
+	}
+	.lift:hover {
+		transform: translateY(-2px);
+		box-shadow: var(--shadow-md);
+	}
+}
+
+/* Reduced motion: keep opacity/color comprehension, drop all movement. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
 }

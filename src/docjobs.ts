@@ -1,5 +1,6 @@
-/** Document jobs: one active job at a time (upstream IP safety),
- *  chunks within a job run in a worker pool. SSE events, aggregate report. */
+/** Document jobs: jobs start immediately (FIFO); CHUNKS share one global slot
+ *  pool, so chunks of different files run in parallel up to the cap.
+ *  SSE events, aggregate report. */
 import { chunkText } from "./chunk.ts";
 import {
   createGuest,
@@ -65,12 +66,24 @@ export type JobEvent =
 const jobs = new Map<string, DocJob>();
 const subs = new Map<string, Set<ReadableStreamDefaultController>>();
 const queue: string[] = [];
-let activeJobId: string | null = null;
 
-/** Chunk worker pool: chunks are independent (fresh guest each), so they run
- *  in parallel. One browser, N contexts — not N browser processes.
+/** Global chunk slots shared across ALL jobs: chunks of different files run
+ *  in parallel up to this cap (one browser, N contexts — not N browsers).
  *  CHUNK_CONCURRENCY default 5, hard cap 10 (upstream throttle safety). */
 const CHUNK_CONCURRENCY = Math.min(10, Math.max(1, Number(process.env.CHUNK_CONCURRENCY ?? 5)));
+let activeChunks = 0;
+const chunkWaiters: Array<() => void> = [];
+
+async function chunkSlot(): Promise<() => void> {
+  while (activeChunks >= CHUNK_CONCURRENCY) {
+    await new Promise<void>((resolve) => chunkWaiters.push(resolve));
+  }
+  activeChunks++;
+  return () => {
+    activeChunks--;
+    chunkWaiters.shift()?.();
+  };
+}
 /** Min gap between chunk submits across workers (shared politeness throttle). */
 const SUBMIT_GAP_MS = Number(process.env.SUBMIT_GAP_MS ?? 1500);
 let lastSubmit = 0;
@@ -173,27 +186,42 @@ export function createJob(name: string, text: string, fromIp: string, extractMet
 }
 
 async function pump() {
-  if (activeJobId) return;
-  const nextId = queue.shift();
-  if (!nextId) return;
-  const job = jobs.get(nextId);
-  if (!job) return void pump();
-  activeJobId = nextId;
-  job.status = "active";
-  emit(job.id, { type: "job-started", jobId: job.id });
-  try {
-    await runJob(job);
-  } catch (e) {
-    job.status = "error";
-    job.error = (e as Error).message;
-    emit(job.id, { type: "job-error", jobId: job.id, error: job.error });
-  } finally {
-    activeJobId = null;
-    void pump();
+  // No active-job gate: every queued job starts at once; the shared chunk
+  // slots (+ submit throttle) bound actual upstream load instead.
+  for (;;) {
+    const nextId = queue.shift();
+    if (!nextId) return;
+    const job = jobs.get(nextId);
+    if (!job) continue;
+    job.status = "active";
+    emit(job.id, { type: "job-started", jobId: job.id });
+    void runJob(job).then(
+      () => {},
+      (e) => {
+        job.status = "error";
+        job.error = (e as Error).message;
+        emit(job.id, { type: "job-error", jobId: job.id, error: job.error });
+      },
+    );
   }
 }
 
 async function runChunk(
+  job: DocJob,
+  chunk: ChunkState,
+  opts: { manualToken?: string; capsolverKey?: string },
+): Promise<void> {
+  // Global slot: chunks across jobs share the pool, so a 3-chunk file and a
+  // 1-chunk file overlap instead of serializing per job.
+  const release = await chunkSlot();
+  try {
+    await runChunkInner(job, chunk, opts);
+  } finally {
+    release();
+  }
+}
+
+async function runChunkInner(
   job: DocJob,
   chunk: ChunkState,
   opts: { manualToken?: string; capsolverKey?: string },

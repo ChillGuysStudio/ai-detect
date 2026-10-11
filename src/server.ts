@@ -204,4 +204,10 @@ app.get("*", (c) =>
 );
 
 console.log(`ai-detect listening on :${PORT}`);
+console.log(
+  `config: CHUNK_CONCURRENCY=${process.env.CHUNK_CONCURRENCY ?? 5} ` +
+    `TOKEN_CONCURRENCY=${process.env.TOKEN_CONCURRENCY ?? process.env.CHUNK_CONCURRENCY ?? 5} ` +
+    `SUBMIT_GAP_MS=${process.env.SUBMIT_GAP_MS ?? 1500} ` +
+    `CAPSOLVER_KEY=${process.env.CAPSOLVER_KEY ? "set" : "unset"}`,
+);
 export default { port: PORT, fetch: app.fetch };

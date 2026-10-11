@@ -10,8 +10,12 @@ let browser: Browser | null = null;
 let starting: Promise<Browser> | null = null;
 
 /** Cap parallel token contexts: one browser, N lightweight contexts.
- *  10 browser *processes* would each eat hundreds of MB; contexts share one. */
-const TOKEN_CONCURRENCY = Math.min(10, Math.max(1, Number(process.env.TOKEN_CONCURRENCY ?? 5)));
+ *  10 browser *processes* would each eat hundreds of MB; contexts share one.
+ *  Defaults to CHUNK_CONCURRENCY so token minting never bottlenecks the pool. */
+const TOKEN_CONCURRENCY = Math.min(
+  10,
+  Math.max(1, Number(process.env.TOKEN_CONCURRENCY ?? process.env.CHUNK_CONCURRENCY ?? 5)),
+);
 let activeTokens = 0;
 const tokenWaiters: Array<() => void> = [];
 

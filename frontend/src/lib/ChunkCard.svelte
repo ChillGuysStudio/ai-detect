@@ -32,14 +32,14 @@
 	);
 </script>
 
-<div class="card {dot}">
+<div class="card {dot}" class:open>
 	<button class="head" onclick={() => (open = !open)} aria-expanded={open}>
 		<span class="dot"></span>
 		<strong>Chunk {chunk.index + 1}</strong>
 		<span class="meta">{chunk.words} words</span>
 		{#if chunk.status === 'done'}
 			<span class="meta">AI {chunk.strongPct}% · likely {chunk.likelyPct}%</span>
-			<span class="chev">{open ? '▾' : '▸'}</span>
+			<span class="chev">▸</span>
 		{:else if chunk.status === 'active'}
 			<span class="meta">checking…</span>
 		{:else if chunk.status === 'error'}
@@ -64,10 +64,11 @@
 
 <style>
 	.card {
-		border: 1px solid #e2e4ec;
-		border-radius: 8px;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-sm);
 		margin: 8px 0;
-		background: #fff;
+		background: var(--surface);
+		box-shadow: var(--shadow-sm);
 	}
 	.head {
 		display: flex;
@@ -89,24 +90,34 @@
 		flex: none;
 	}
 	.bad .dot {
-		background: #d64545;
+		background: var(--danger);
 	}
 	.ok .dot {
-		background: #2f9e44;
+		background: var(--ok);
 	}
 	.active .dot {
-		background: #f0a020;
+		background: var(--warn);
+		animation: pulse-dot 1.2s var(--ease-in-out) infinite;
+	}
+	@keyframes pulse-dot {
+		50% {
+			opacity: 0.35;
+		}
 	}
 	.meta {
-		color: #666d84;
+		color: var(--ink-faint);
 		font-size: 0.9em;
 	}
 	.meta.err {
-		color: #b3261e;
+		color: var(--danger);
 	}
 	.chev {
 		margin-left: auto;
-		color: #999;
+		color: var(--ink-faint);
+		transition: transform 180ms var(--ease-out);
+	}
+	.open .chev {
+		transform: rotate(90deg);
 	}
 	.body {
 		padding: 0 12px 12px;
@@ -121,7 +132,7 @@
 		white-space: pre-wrap;
 	}
 	mark {
-		background: #ffd8d8;
+		background: rgba(214, 69, 69, 0.16);
 		border-radius: 2px;
 	}
 </style>
