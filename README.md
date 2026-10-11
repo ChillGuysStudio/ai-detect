@@ -1,105 +1,69 @@
-# ai-detect - document AI checker
+# ai-detect
 
-Upload text or PDF → split into ≤550-word chunks → each chunk checked against
-plagiarismcheck.org's TraceGPT AI detector → live progress + per-chunk results
-→ word-weighted aggregate report (on screen + JSON for AI processing).
+Check documents for AI-generated content. Upload text or PDFs, watch each chunk get checked live, and download the report as JSON.
 
-Upload several files at once: they queue as one batch (one job per file),
-each with live progress. Click a file to preview it - PDFs open the page
-overview (all included, click to ignore, 🔍 to zoom), text files show an
-excerpt. Only selected PDF pages are extracted and queued.
+- Splits documents into sentence-aware chunks of 550 words or less.
+- Checks each chunk against the [plagiarismcheck.org](https://plagiarismcheck.org) AI detector, one fresh guest account per chunk.
+- Runs chunk checks in parallel with one shared browser. Default 5, max 10.
+- Streams progress over SSE and highlights flagged sentences in each chunk.
+- Rolls chunks up into a word-weighted verdict across the whole document.
+- Reads PDF text layers and falls back to tesseract OCR for scanned pages.
+- Shows every PDF page as a thumbnail. Click a page to ignore it. Only selected pages get checked.
+- Takes several files at once and checks each file as its own document.
+- Serves the same queue to LLMs through CLI flags and an MCP endpoint.
+- Ships as one Docker image with Chromium bundled in. The host needs only Docker.
 
-## Quick start (Docker - recommended)
+## Quick start
 
 ```bash
 docker build -t ai-detect .
 docker run --rm -p 3000:3000 ai-detect
 # open http://localhost:3000
-# Ctrl+C stops it cleanly (nothing left behind thanks to --rm)
+# Ctrl+C stops it cleanly
+```
 
-The image bundles everything (Bun runtime, Chromium for token minting,
-tesseract + poppler for PDF/OCR) - the host needs only Docker, no browser,
-no Node, nothing else.
+Run it on your VPS or home server and share the URL. There are no logins. One shared queue keeps the upstream IP safe.
 
-Share with friends: run it on your VPS/home server and give them the URL.
-No logins - one global queue (concurrency 1) keeps the upstream IP safe.
-Optional: `docker run -e CAPSOLVER_KEY=...` as token fallback.
-Tune with env (see `.env.example`; Bun loads `.env` automatically,
-Dockerfile values are the fallback when absent):
-`CHUNK_CONCURRENCY` (default 5, max 10 - chunks across all files share one
-pool, so a 3-chunk file and a 1-chunk file overlap),
-`TOKEN_CONCURRENCY` (defaults to chunk concurrency),
-`SUBMIT_GAP_MS` (default 1500 - shared politeness gap between submits).
+## Configuration
+
+Copy `.env.example` to `.env` and edit it. Bun reads `.env` on startup. The Dockerfile values apply when a variable is absent.
+
+- `PORT`. HTTP port. Default 3000.
+- `CHUNK_CONCURRENCY`. Parallel chunk checks across all files. Default 5, max 10.
+- `TOKEN_CONCURRENCY`. Parallel token contexts in the browser. Defaults to chunk concurrency.
+- `SUBMIT_GAP_MS`. Minimum gap between chunk submits. Default 1500.
+- `CAPSOLVER_KEY`. Paid fallback for token minting. Unset by default.
+- `CHROME_EXECUTABLE`. Browser binary. The image default is `/usr/bin/chromium`.
 
 ## Dev
 
 ```bash
 bun install
-bun run src/server.ts        # API + frontend on :3000 (serve ./frontend-dist)
-cd frontend && bun install && bun run dev   # Vite dev (proxies /api to :3000)
+bun run src/server.ts
+cd frontend && bun install && bun run dev
 ```
 
-Local dev needs a Chrome/Chromium on PATH (or `bunx playwright install
-chromium`): token minting tries `CHROME_EXECUTABLE`, then `channel: "chrome"`,
-then Playwright's bundled browser. Docker users never touch this.
+The API serves on port 3000. The Vite dev server proxies `/api` there.
 
-## How it works
-
-- **Chunking** (`src/chunk.ts`): sentence-aware greedy pack, target ~450 words,
-  hard cap **550**. Each chunk gets its own guest account, so quota isn't the
-  constraint - accuracy sweet spot (200–550w) + progress granularity is.
-- **Queue** (`src/docjobs.ts`): global FIFO (one active job), chunks run in a
-  worker pool - `CHUNK_CONCURRENCY` (default 5, max 10), one browser with
-  parallel contexts (not one Chromium per chunk), fresh guest per chunk,
-  shared 1.5s submit throttle (`SUBMIT_GAP_MS`), one retry on paywall.
-  A 4-chunk doc completes in ~20s wall vs ~65s sequential.
-- **Tokens** (`src/browser.ts`): one persistent Chromium mints a fresh-context
-  v3 token per chunk (~1–2s), fully server-side and free - this is the method
-  in use (client-minted tokens score identically per REPORT.md, but nothing
-  needs to provide them). `POST /api/jobs` still accepts an optional
-  `manualToken` to seed the first chunk if upstream ever throttles us.
-- **PDF** (`src/pdf.ts`): embedded text layer via pdfjs; pages with <100 chars
-  fall back to tesseract OCR (`tesseract` + `pdftoppm` if installed, always in Docker).
-  Uploads open a **page overview**: thumbnails for every page (all included -
-  click a page to ignore it, click again to include; 🔍 zooms to a minimal
-  content + ✕ view). Only selected pages are extracted and queued.
-  API: `POST /api/pdf/preview` → `GET .../thumb/:n` / `page/:n`,
-  `POST /api/jobs` takes `previewId` + `pages` (`"1,3,5-7"`) + `excludePages`.
-- **Live updates**: `GET /api/jobs/:id/events` (SSE) streams
-  `chunk-started/done/error`, `job-done`; the Svelte 5 UI appends cards as they
-  arrive and shows the aggregate when complete.
-- **Report**: word-weighted `avgStrong`/`avgLikely`, verdict
-  (≥60% detected / ≥30% mixed / else likely-human), flagged chunks (≥50%),
-  sentence-level highlights from the detector's own position data.
-  `GET /api/jobs/:id/report.json` downloads the full job JSON.
+Local dev needs Chrome or Chromium on PATH, or `bunx playwright install chromium`. Token minting tries `CHROME_EXECUTABLE`, then system Chrome, then the Playwright browser.
 
 ## API
 
-- `POST /api/jobs` (multipart `text`|`file`, optional `manualToken`, `ocrLang`)
-  → `{jobId, chunks, words}`
-- `GET /api/jobs/:id` → status + chunks + texts + aggregate
-- `GET /api/jobs/:id/events` → SSE stream
-- `GET /api/jobs/:id/report.json` → download
+- `POST /api/jobs` takes multipart `text`, `file`, or `previewId` plus `pages` like `"1,3,5-7"` and `excludePages`. It returns `{jobId, chunks, words}`.
+- `GET /api/jobs/:id` returns status, chunks, texts, and the aggregate.
+- `GET /api/jobs/:id/events` streams progress as SSE.
+- `GET /api/jobs/:id/report.json` downloads the full report.
+- `POST /api/pdf/preview` takes a PDF and returns `{previewId, pages, info}` with per-page word counts.
+- `GET /api/pdf/preview/:id/thumb/:n` and `/page/:n` render page PNGs for the overview.
+- `/mcp` serves Streamable HTTP MCP with `submit_document`, `job_status`, `job_report`, `pdf_pages`, and `check_text`.
 
-## CLI (single texts, no server)
+## CLI
 
 ```bash
-bun run src/cli.ts --file sample.txt --out result-ts.json
-bun run src/cli.ts --file sample.txt --token-profile client
-# PDFs: inventory pages, then check only some (LLM-friendly pure JSON)
+bun run src/cli.ts --file essay.txt --out result.json
 bun run src/cli.ts --file doc.pdf --list-pages
 bun run src/cli.ts --file doc.pdf --pages 1-3 --json
 bun run src/cli.ts --file doc.pdf --pages all --exclude-pages 1,2 --json
 ```
 
-`--json` prints only the result JSON to stdout (logs go to stderr, exit codes
-preserved) - pipe it straight into an LLM. `--list-pages` prints per-page
-word counts so an agent can pick pages first.
-
-## MCP (any model with network access)
-
-Same container serves Streamable HTTP MCP at `/mcp` (stateless, shares the
-job queue + browser - no duplicate load). Tools: `submit_document`
-(text or base64 PDF + `pages`/`excludePages`), `job_status`, `job_report`,
-`pdf_pages`, `check_text` (short texts, sync). Point any MCP client at
-`http://host:3000/mcp`.
+`--json` prints only the result JSON to stdout and sends logs to stderr, so you can pipe it into an LLM. `--list-pages` prints per-page word counts so an agent can pick pages first.
