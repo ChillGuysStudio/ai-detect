@@ -1,4 +1,5 @@
-/** Document jobs: chunk queue (global concurrency 1), SSE events, aggregate report. */
+/** Document jobs: one active job at a time (upstream IP safety),
+ *  chunks within a job run in a worker pool. SSE events, aggregate report. */
 import { chunkText } from "./chunk.ts";
 import {
   createGuest,
@@ -66,7 +67,22 @@ const subs = new Map<string, Set<ReadableStreamDefaultController>>();
 const queue: string[] = [];
 let activeJobId: string | null = null;
 
-const PACE_MS = Number(process.env.PACE_MS ?? 3000);
+/** Chunk worker pool: chunks are independent (fresh guest each), so they run
+ *  in parallel. One browser, N contexts — not N browser processes.
+ *  CHUNK_CONCURRENCY default 5, hard cap 10 (upstream throttle safety). */
+const CHUNK_CONCURRENCY = Math.min(10, Math.max(1, Number(process.env.CHUNK_CONCURRENCY ?? 5)));
+/** Min gap between chunk submits across workers (shared politeness throttle). */
+const SUBMIT_GAP_MS = Number(process.env.SUBMIT_GAP_MS ?? 1500);
+let lastSubmit = 0;
+
+async function submitGate(): Promise<void> {
+  for (;;) {
+    const wait = lastSubmit + SUBMIT_GAP_MS - Date.now();
+    if (wait <= 0) break;
+    await Bun.sleep(Math.min(wait, 250));
+  }
+  lastSubmit = Date.now();
+}
 
 export function getJob(id: string): DocJob | undefined {
   return jobs.get(id);
@@ -76,18 +92,17 @@ export function emit(jobId: string, ev: JobEvent) {
   const set = subs.get(jobId);
   if (!set || set.size === 0) return;
   const data = `data: ${JSON.stringify(ev)}\n\n`;
-  const terminal = ev.type === "job-done" || ev.type === "job-error";
+  // NOTE: never close() live controllers here — the client closes the
+  // EventSource on job-done/end. Server-side close races the last write
+  // and surfaces as ERR_INCOMPLETE_CHUNKED_ENCODING in Chromium.
   for (const c of [...set]) {
     try {
       c.enqueue(data);
-      if (terminal) {
+      if (ev.type === "job-done" || ev.type === "job-error") {
         c.enqueue(`event: end\ndata: {}\n\n`);
-        c.close();
       }
     } catch {
-      /* closed by client */
-    } finally {
-      if (terminal) set.delete(c);
+      set.delete(c);
     }
   }
 }
@@ -198,17 +213,18 @@ async function runChunk(
           : await mintTokenWithFallback("server", opts.capsolverKey);
       const api = await createGuest(jar, csrf.guest_csrf, token);
       await validateText(jar, api, chunk.text);
+      await submitGate();
       const sub = await submitAiCheck(jar, api, chunk.text);
       chunk.checkId = sub.id;
-      const res = await pollResult(jar, api, sub.id, 5000, 600000, false);
+      const res = await pollResult(jar, api, sub.id, 3000, 600000, false);
       chunk.status = "done";
-      chunk.strongPct = res.strong_percent;
-      chunk.likelyPct = res.likely_percent;
-      chunk.processedPct = res.processed_percent;
+      // human-written texts come back with null percents + "Most likely written by a human"
+      chunk.strongPct = res.strong_percent ?? "0.00";
+      chunk.likelyPct = res.likely_percent ?? "0.00";
+      chunk.processedPct = res.processed_percent ?? "0.00";
       chunk.conclusion = res.conclusion ?? undefined;
       chunk.chunks = res.chunks;
       emit(job.id, { type: "chunk-done", jobId: job.id, index: chunk.index, chunk: stripText(chunk) });
-      await Bun.sleep(PACE_MS);
       return;
     } catch (e) {
       lastErr = e;
@@ -258,15 +274,23 @@ function aggregate(job: DocJob): Aggregate {
 async function runJob(job: DocJob) {
   const capsolverKey = process.env.CAPSOLVER_KEY;
   const manualToken = (job as DocJob & { manualToken?: string }).manualToken;
-  for (const chunk of job.chunks) {
-    try {
-      await runChunk(job, chunk, { manualToken, capsolverKey });
-    } catch (e) {
-      chunk.status = "error";
-      chunk.error = ((e as Error)?.message ?? "unknown").slice(0, 300);
-      emit(job.id, { type: "chunk-error", jobId: job.id, index: chunk.index, chunk: stripText(chunk) });
+  let cursor = 0;
+  const worker = async (wid: number) => {
+    await Bun.sleep(wid * 400); // stagger worker starts
+    for (;;) {
+      const i = cursor++;
+      if (i >= job.chunks.length) return;
+      const chunk = job.chunks[i];
+      try {
+        await runChunk(job, chunk, { manualToken, capsolverKey });
+      } catch (e) {
+        chunk.status = "error";
+        chunk.error = ((e as Error)?.message ?? "unknown").slice(0, 300);
+        emit(job.id, { type: "chunk-error", jobId: job.id, index: chunk.index, chunk: stripText(chunk) });
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(CHUNK_CONCURRENCY, job.chunks.length) }, (_, w) => worker(w)));
   job.aggregate = aggregate(job);
   job.status = job.chunks.some((c) => c.status === "done") ? "done" : "error";
   if (job.status === "error") job.error = "all chunks failed";

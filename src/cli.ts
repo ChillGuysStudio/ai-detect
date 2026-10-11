@@ -1,51 +1,25 @@
 #!/usr/bin/env bun
-/** CLI: bun run src/cli.ts --file sample.txt --out result.json */
-
+/** CLI: single AI check (text or PDF pages) with LLM-friendly JSON output.
+ *
+ *  bun run src/cli.ts --file essay.txt --out result.json
+ *  bun run src/cli.ts --file doc.pdf --pages 1-3 --json   # stdout = pure result JSON
+ *  bun run src/cli.ts --file doc.pdf --list-pages         # page inventory for picking --pages
+ */
 import { parseArgs } from "node:util";
 import { checkWithAutoReset } from "./jobs.ts";
 import { summarize, PaywallError, RecaptchaError, ValidationError } from "./core.ts";
-
-async function readInput(file?: string, uploadOriginal?: boolean): Promise<{
-  text: string;
-  filename?: string;
-  fileBytes?: Uint8Array;
-}> {
-  if (!file) return { text: "" };
-  if (file.endsWith(".pdf")) {
-    const text = await extractPdfText(file);
-    if (uploadOriginal) return { text, filename: file.split("/").pop(), fileBytes: new Uint8Array(await Bun.file(file).arrayBuffer()) };
-    return { text };
-  }
-  const raw = new Uint8Array(await Bun.file(file).arrayBuffer());
-  const text = new TextDecoder("utf-8", { fatal: false }).decode(raw);
-  if (uploadOriginal) return { text, filename: file.split("/").pop(), fileBytes: raw };
-  return { text };
-}
-
-async function extractPdfText(path: string): Promise<string> {
-  // Bun has no built-in PDF parser; try pdfjs-dist if installed, else fail loudly.
-  try {
-    // @ts-ignore - optional dependency
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const data = new Uint8Array(await Bun.file(path).arrayBuffer());
-    const doc = await pdfjs.getDocument({ data }).promise;
-    const parts: string[] = [];
-    for (let i = 1; i <= doc.numPages; i++) {
-      const page = await doc.getPage(i);
-      const tc = await page.getTextContent();
-      parts.push(tc.items.map((it: unknown) => (it as { str?: string }).str ?? "").join(" "));
-    }
-    return parts.join("\n");
-  } catch {
-    throw new Error("PDF needs `bun add pdfjs-dist`, or convert to .txt first.");
-  }
-}
+import { excludePages, formatPages, parsePages } from "./pages.ts";
+import { extractPdf, pdfPageInfo } from "./pdf.ts";
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
     text: { type: "string" },
     file: { type: "string" },
+    pages: { type: "string" },
+    "exclude-pages": { type: "string" },
+    "list-pages": { type: "boolean", default: false },
+    json: { type: "boolean", default: false },
     "upload-original": { type: "boolean", default: false },
     out: { type: "string" },
     "recaptcha-token": { type: "string" },
@@ -58,16 +32,50 @@ const { values } = parseArgs({
   strict: true,
 });
 
-if (!values.text && !values.file) {
-  console.error("need --text or --file");
-  process.exit(1);
+const asJson = Boolean(values.json);
+const log = (...a: unknown[]) => (asJson ? console.error(...a) : console.log(...a));
+const fail = (code: number, error: string) => {
+  if (asJson) console.log(JSON.stringify({ error, exitCode: code }));
+  else console.error(error);
+  process.exit(code);
+};
+
+if (!values.text && !values.file) fail(1, "need --text or --file");
+
+async function readInput(): Promise<{ text: string; filename?: string; fileBytes?: Uint8Array; meta: Record<string, unknown> }> {
+  if (values.text) return { text: values.text, meta: {} };
+  const path = values.file!;
+  const raw = new Uint8Array(await Bun.file(path).arrayBuffer());
+  if (/\.pdf$/i.test(path)) {
+    if (values["list-pages"]) {
+      const { pages, info } = await pdfPageInfo(raw);
+      console.log(JSON.stringify({ file: path, pages, info }, null, 2));
+      process.exit(0);
+    }
+    const { pages: total } = await pdfPageInfo(raw);
+    const idx = excludePages(parsePages(values.pages, total), values["exclude-pages"], total);
+    const ex = await extractPdf(raw, { pages: idx });
+    const meta = { file: path, pages: formatPages(idx), ofTotal: total, method: ex.method };
+    if (values["upload-original"]) {
+      return { text: ex.text, filename: path.split("/").pop(), fileBytes: raw, meta };
+    }
+    return { text: ex.text, meta };
+  }
+  if (values["list-pages"] || values.pages || values["exclude-pages"]) {
+    fail(1, "--pages/--exclude-pages/--list-pages only apply to PDFs");
+  }
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(raw);
+  if (values["upload-original"]) return { text, filename: path.split("/").pop(), fileBytes: raw, meta: { file: path } };
+  return { text, meta: { file: path } };
 }
 
-const text = values.text ?? (await readInput(values.file, values["upload-original"])).text;
-const input = values.text ? { text } : await readInput(values.file, values["upload-original"]);
+const input = await readInput();
 const words = input.text.split(/\s+/).filter(Boolean).length;
 if (words < 100) {
   console.error(`WARNING: only ${words} words (site requires >=100, best 200-550). It will likely reject.`);
+}
+if (words > 600 && !input.fileBytes) {
+  console.error(`WARNING: ${words} words in one check (free quota ~2 pages). Prefer --pages to select fewer pages, or use the web queue for whole documents.`);
 }
 
 try {
@@ -79,29 +87,25 @@ try {
     filename: input.filename,
     fileBytes: input.fileBytes,
     pollIntervalMs: Number(values["poll-interval"]) * 1000,
-    verbose: !values.quiet,
+    verbose: !values.quiet && !asJson,
   });
-  console.log(summarize(result));
-  if (values.out) {
-    await Bun.write(values.out, JSON.stringify(result, null, 2));
-    console.log(`wrote ${values.out}`);
+  const payload = { ...result, _meta: input.meta };
+  if (asJson) {
+    console.log(JSON.stringify(payload));
   } else {
-    const { id, status, words: w, pages, processed_percent, strong_percent, likely_percent, conclusion, conclusion_type, chunks } = result;
-    console.log(JSON.stringify({ id, status, words: w, pages, processed_percent, strong_percent, likely_percent, conclusion, conclusion_type, chunks }, null, 2));
+    log(summarize(result));
+    if (values.out) {
+      await Bun.write(values.out, JSON.stringify(payload, null, 2));
+      log(`wrote ${values.out}`);
+    } else {
+      const { id, status, words: w, pages, processed_percent, strong_percent, likely_percent, conclusion, conclusion_type, chunks } = result;
+      log(JSON.stringify({ id, status, words: w, pages, processed_percent, strong_percent, likely_percent, conclusion, conclusion_type, chunks }, null, 2));
+    }
   }
+  if (values.out && asJson) await Bun.write(values.out, JSON.stringify(payload, null, 2));
 } catch (e) {
-  if (e instanceof RecaptchaError) {
-    console.error(`RECAPTCHA FAILED: ${e.message}`);
-    process.exit(2);
-  }
-  if (e instanceof PaywallError) {
-    console.error(`PAYWALL/LIMIT (even after reset): ${e.message}`);
-    process.exit(3);
-  }
-  if (e instanceof ValidationError) {
-    console.error(`REJECTED (no retry): ${e.message}`);
-    process.exit(4);
-  }
-  console.error(`ERROR: ${(e as Error).name}: ${(e as Error).message}`);
-  process.exit(1);
+  if (e instanceof RecaptchaError) fail(2, `RECAPTCHA FAILED: ${e.message}`);
+  if (e instanceof PaywallError) fail(3, `PAYWALL/LIMIT (even after reset): ${e.message}`);
+  if (e instanceof ValidationError) fail(4, `REJECTED (no retry): ${e.message}`);
+  fail(1, `ERROR: ${(e as Error).name}: ${(e as Error).message}`);
 }

@@ -57,5 +57,17 @@ export function chunkText(text: string, maxWords = MAX_WORDS): Chunk[] {
     curWords += w;
   }
   flush();
+  // A trailing stub (<100 words) would fail site validation — fold it into
+  // the previous chunk. May push that chunk past MAX in pathological cases,
+  // but that beats a guaranteed-rejected stub.
+  const MIN_WORDS = 100;
+  while (chunks.length > 1 && chunks[chunks.length - 1].words < MIN_WORDS) {
+    const stub = chunks.pop()!;
+    const prev = chunks[chunks.length - 1];
+    prev.text = `${prev.text} ${stub.text}`;
+    prev.words = countWords(prev.text);
+  }
+  // re-index (merge changed order/count)
+  chunks.forEach((c, i) => (c.index = i));
   return chunks;
 }

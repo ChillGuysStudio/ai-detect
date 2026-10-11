@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { createJob, fetchJob, subscribeJob, type JobView } from './lib/api.js';
+	import { createJob, fetchJob, subscribeJob, uploadPreview, type JobView, type PdfPreview } from './lib/api.js';
 	import ChunkCard from './lib/ChunkCard.svelte';
+	import PdfOverview from './lib/PdfOverview.svelte';
 
 	let text = $state('');
 	let files = $state<FileList | undefined>(undefined);
-	let manualToken = $state('');
 	let starting = $state(false);
 	let startError = $state('');
 	let jobId = $state<string | null>(null);
 	let job = $state<JobView | null>(null);
 	let stopSSE = $state<(() => void) | null>(null);
+	let preview = $state<PdfPreview | null>(null);
 
 	const done = $derived(job ? job.chunks.filter((c) => c.status === 'done').length : 0);
 	const total = $derived(job?.chunks.length ?? 0);
@@ -22,13 +23,43 @@
 			startError = 'Paste text or choose a file.';
 			return;
 		}
+		// PDFs go through the page overview first (all included, uncheck to ignore).
+		if (file && /\.pdf$/i.test(file.name)) {
+			starting = true;
+			try {
+				preview = await uploadPreview(file);
+			} catch (e) {
+				startError = (e as Error).message;
+			} finally {
+				starting = false;
+			}
+			return;
+		}
 		starting = true;
 		try {
 			const res = await createJob({
 				text: text.trim() || undefined,
-				file,
-				manualToken: manualToken.trim() || undefined
+				file
 			});
+			jobId = res.jobId;
+			job = null;
+		} catch (e) {
+			startError = (e as Error).message;
+		} finally {
+			starting = false;
+		}
+	}
+
+	async function startFromPreview(pagesSpec: string) {
+		if (!preview) return;
+		startError = '';
+		starting = true;
+		try {
+			const res = await createJob({
+				previewId: preview.previewId,
+				pages: pagesSpec
+			});
+			preview = null;
 			jobId = res.jobId;
 			job = null;
 		} catch (e) {
@@ -41,6 +72,7 @@
 	function reset() {
 		jobId = null;
 		job = null;
+		preview = null;
 		text = '';
 		files = undefined;
 	}
@@ -105,6 +137,16 @@
 	<h1>ai-detect <span class="sub">document AI check</span></h1>
 
 	{#if !jobId}
+		{#if preview}
+			<PdfOverview
+				{preview}
+				onSubmit={(spec) => startFromPreview(spec)}
+				onBack={() => (preview = null)}
+			/>
+			{#if startError}
+				<p class="error">{startError}</p>
+			{/if}
+		{:else}
 		<section class="panel">
 			<label>
 				Paste text (100+ words)
@@ -119,15 +161,6 @@
 			{#if files?.[0]}
 				<p class="hint">Selected: {files[0].name} ({Math.round(files[0].size / 1024)} KB)</p>
 			{/if}
-			<details>
-				<summary>Advanced: bring your own reCAPTCHA token</summary>
-				<p class="hint">
-					Optional. The server mints tokens itself by default. If checks get throttled,
-					paste a <code>guest</code>-action token minted on plagiarismcheck.org in your own
-					browser — it seeds the first chunk.
-				</p>
-				<input bind:value={manualToken} placeholder="03AFcWeA…" />
-			</details>
 			{#if startError}
 				<p class="error">{startError}</p>
 			{/if}
@@ -136,6 +169,7 @@
 			</button>
 			<p class="hint">Text is split into ≤550-word chunks; each chunk is checked separately.</p>
 		</section>
+		{/if}
 	{:else if !job}
 		<p>Loading job…</p>
 	{:else}
@@ -235,13 +269,6 @@
 	}
 	.file input {
 		margin-top: 6px;
-	}
-	details {
-		margin: 12px 0;
-	}
-	summary {
-		cursor: pointer;
-		color: #2952cc;
 	}
 	.hint {
 		color: #666d84;

@@ -9,6 +9,23 @@ import { getRecaptchaToken as oneShotToken } from "./token.ts";
 let browser: Browser | null = null;
 let starting: Promise<Browser> | null = null;
 
+/** Cap parallel token contexts: one browser, N lightweight contexts.
+ *  10 browser *processes* would each eat hundreds of MB; contexts share one. */
+const TOKEN_CONCURRENCY = Math.min(10, Math.max(1, Number(process.env.TOKEN_CONCURRENCY ?? 5)));
+let activeTokens = 0;
+const tokenWaiters: Array<() => void> = [];
+
+async function tokenSlot(): Promise<() => void> {
+  while (activeTokens >= TOKEN_CONCURRENCY) {
+    await new Promise<void>((resolve) => tokenWaiters.push(resolve));
+  }
+  activeTokens++;
+  return () => {
+    activeTokens--;
+    tokenWaiters.shift()?.();
+  };
+}
+
 async function getBrowser(): Promise<Browser> {
   if (browser?.isConnected()) return browser;
   if (!starting) {
@@ -35,6 +52,7 @@ async function getBrowser(): Promise<Browser> {
 
 export async function mintToken(profile: BrowserProfile = "server"): Promise<{ token: string; ms: number }> {
   const t0 = Date.now();
+  const release = await tokenSlot();
   const b = await getBrowser();
   const context =
     profile === "client"
@@ -52,11 +70,18 @@ export async function mintToken(profile: BrowserProfile = "server"): Promise<{ t
     });
     const page = await context.newPage();
     await page.goto(AI_PAGE, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(3500);
+    // Wait for the captcha lib instead of a fixed sleep — usually ~1s, not 3.5s.
+    await page
+      .waitForFunction(
+        () => (window as unknown as { grecaptcha?: { execute: unknown } }).grecaptcha?.execute,
+        { timeout: 15000 },
+      )
+      .catch(() => {});
+    await page.waitForTimeout(400);
     if (profile === "client") {
       await page.mouse.move(400, 300);
       await page.mouse.wheel(0, 400);
-      await page.waitForTimeout(1200);
+      await page.waitForTimeout(600);
     }
     const token = (await Promise.race([
       page.evaluate(
@@ -78,6 +103,7 @@ export async function mintToken(profile: BrowserProfile = "server"): Promise<{ t
     }
     return { token, ms: Date.now() - t0 };
   } finally {
+    release();
     await context.close().catch(() => {});
   }
 }
