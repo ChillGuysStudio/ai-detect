@@ -51,6 +51,7 @@
 
 	async function addFiles(list: FileList | undefined) {
 		if (!list) return;
+		startError = '';
 		for (const file of list) {
 			const isPdf = /\.pdf$/i.test(file.name);
 			const entry: Upload = {
@@ -67,7 +68,7 @@
 			};
 			uploads.push(entry);
 			// NOTE: mutate through the $state proxy (looked up by uid), not the
-			// raw `entry` object — raw writes bypass reactivity and never render.
+			// raw `entry` object - raw writes bypass reactivity and never render.
 			const at = () => uploads.find((x) => x.uid === entry.uid);
 			if (isPdf) {
 				uploadPreview(file)
@@ -103,6 +104,7 @@
 		uploads = uploads.filter((u) => u.uid !== id);
 		if (overviewUid === id) overviewUid = null;
 		if (textviewUid === id) textviewUid = null;
+		startError = '';
 	}
 
 	function includedPages(u: Upload): number[] {
@@ -156,7 +158,7 @@
 			return;
 		}
 		if (hasText && text.trim().split(/\s+/).length < 100) {
-			startError = 'Pasted text is under 100 words — add more or remove it.';
+			startError = 'Pasted text is under 100 words - add more or remove it.';
 			return;
 		}
 		if (uploads.length > 0 && !filesReady) {
@@ -275,11 +277,16 @@
 		<section class="panel">
 			<label>
 				Paste text (100+ words)
-				<textarea bind:value={text} rows="6" placeholder="Paste the document text here…"></textarea>
+				<textarea
+				bind:value={text}
+				rows="6"
+				placeholder="Paste the document text here…"
+				oninput={() => (startError = '')}
+			></textarea>
 			</label>
 			<div class="row">
 				<label class="file">
-					…or choose files (.txt, .md, .pdf — several at once)
+					…or choose files (.txt, .md, .pdf - several at once)
 					<input
 						type="file"
 						accept=".txt,.md,.pdf,.text"
@@ -332,7 +339,10 @@
 		<PdfOverview
 			preview={overviewEntry.preview}
 			ignored={overviewEntry.ignored}
-			onChange={(sel) => (overviewEntry.ignored = sel)}
+			onChange={(sel) => {
+				overviewEntry.ignored = sel;
+				startError = '';
+			}}
 			onClose={() => (overviewUid = null)}
 		/>
 	{/if}
@@ -371,8 +381,8 @@
 <style>
 	:global(body) {
 		font-family: system-ui, -apple-system, sans-serif;
-		background: #f4f6fb;
-		color: #101840;
+		background: var(--page);
+		color: var(--ink);
 		margin: 0;
 	}
 	main {
@@ -409,6 +419,9 @@
 		font-weight: 600;
 		margin-bottom: 8px;
 	}
+	label > textarea {
+		margin-top: 14px;
+	}
 	textarea {
 		width: 100%;
 		box-sizing: border-box;
@@ -424,7 +437,7 @@
 	textarea:focus {
 		outline: none;
 		border-color: var(--accent);
-		box-shadow: 0 0 0 3px rgba(41, 82, 204, 0.15);
+		box-shadow: 0 0 0 3px var(--focus-ring);
 	}
 	textarea {
 		resize: vertical;
@@ -464,8 +477,8 @@
 		cursor: default;
 	}
 	button.ghost {
-		background: #eef1f8;
-		color: #101840;
+		background: var(--ghost-bg);
+		color: var(--ink);
 	}
 	.topbar {
 		display: flex;
@@ -487,7 +500,7 @@
 	}
 	.progress {
 		height: 8px;
-		background: rgba(16, 24, 64, 0.08);
+		background: var(--track);
 		border-radius: 999px;
 		overflow: hidden;
 		margin-top: 12px;
@@ -570,6 +583,6 @@
 		white-space: pre-wrap;
 		font: inherit;
 		line-height: 1.55;
-		color: #232838;
+		color: var(--body-text);
 	}
 </style>

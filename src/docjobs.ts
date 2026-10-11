@@ -68,7 +68,7 @@ const subs = new Map<string, Set<ReadableStreamDefaultController>>();
 const queue: string[] = [];
 
 /** Global chunk slots shared across ALL jobs: chunks of different files run
- *  in parallel up to this cap (one browser, N contexts — not N browsers).
+ *  in parallel up to this cap (one browser, N contexts - not N browsers).
  *  CHUNK_CONCURRENCY default 5, hard cap 10 (upstream throttle safety). */
 const CHUNK_CONCURRENCY = Math.min(10, Math.max(1, Number(process.env.CHUNK_CONCURRENCY ?? 5)));
 let activeChunks = 0;
@@ -105,7 +105,7 @@ export function emit(jobId: string, ev: JobEvent) {
   const set = subs.get(jobId);
   if (!set || set.size === 0) return;
   const data = `data: ${JSON.stringify(ev)}\n\n`;
-  // NOTE: never close() live controllers here — the client closes the
+  // NOTE: never close() live controllers here - the client closes the
   // EventSource on job-done/end. Server-side close races the last write
   // and surfaces as ERR_INCOMPLETE_CHUNKED_ENCODING in Chromium.
   for (const c of [...set]) {
@@ -286,7 +286,7 @@ function aggregate(job: DocJob): Aggregate {
       : avgStrong >= 60
         ? "AI content detected"
         : avgStrong >= 30
-          ? "Mixed signals — review flagged chunks"
+          ? "Mixed signals - review flagged chunks"
           : "Likely human-written";
   return {
     totalWords: job.totalWords,

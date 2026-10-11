@@ -1,5 +1,6 @@
 # Self-hostable single container: Bun API + built Svelte frontend + Chromium + tesseract.
-# Run: docker build -t ai-detect . && docker run -p 3000:3000 ai-detect
+# Run: docker build -t ai-detect . && docker run --rm -p 3000:3000 ai-detect
+# (--rm so Ctrl+C leaves nothing behind; the server handles SIGINT/SIGTERM.)
 # Open http://localhost:3000
 
 FROM oven/bun:1 AS frontend
@@ -24,4 +25,7 @@ ENV CHROME_EXECUTABLE=/usr/bin/chromium \
 	SUBMIT_GAP_MS=1500
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD bun -e "fetch('http://localhost:3000/api/jobs/nope').then(r=>{if(r.status!==404)throw 0})"
-CMD ["bun", "run", "src/server.ts"]
+# Run Bun directly (not `bun run`) so the server is PID 1 and receives
+# SIGINT/SIGTERM itself — otherwise Ctrl+C / `docker stop` leaves the
+# container running stale. server.ts handles both signals gracefully.
+CMD ["bun", "src/server.ts"]

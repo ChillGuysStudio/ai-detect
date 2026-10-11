@@ -16,7 +16,7 @@ function makeServer(): McpServer {
     "submit_document",
     {
       description:
-        "Check a document for AI-generated content. Splits text into ≤550-word chunks, queues one check per chunk (fresh guest each). Returns a jobId — poll job_status, then read job_report. Prefer this over check_text for anything over ~500 words.",
+        "Check a document for AI-generated content. Splits text into ≤550-word chunks, queues one check per chunk (fresh guest each). Returns a jobId - poll job_status, then read job_report. Prefer this over check_text for anything over ~500 words.",
       inputSchema: {
         text: z.string().optional().describe("Raw document text (>=100 words total)"),
         pdfBase64: z.string().optional().describe("PDF file, base64-encoded (alternative to text)"),
@@ -108,7 +108,7 @@ function makeServer(): McpServer {
       try {
         const words = text.split(/\s+/).filter(Boolean).length;
         if (words < 100) throw new Error(`only ${words} words (need >=100)`);
-        if (words > 600) throw new Error(`${words} words too long for one check — use submit_document`);
+        if (words > 600) throw new Error(`${words} words too long for one check - use submit_document`);
         const r = await checkOnce(text, { tokenProfile: "server", verbose: false });
         return {
           content: [{

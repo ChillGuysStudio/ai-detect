@@ -63,7 +63,7 @@ async function closeDoc(doc: any) {
   }
 }
 
-/** Word/char counts per page (text layer only — cheap, used by the overview UI). */
+/** Word/char counts per page (text layer only - cheap, used by the overview UI). */
 export async function pdfPageInfo(data: Uint8Array): Promise<{ pages: number; info: PdfPageInfo[] }> {
   const doc = await openDoc(data);
   try {

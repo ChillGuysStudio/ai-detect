@@ -91,7 +91,7 @@
 	}
 	.progress {
 		height: 8px;
-		background: rgba(16, 24, 64, 0.08);
+		background: var(--track);
 		border-radius: 999px;
 		overflow: hidden;
 		margin-top: 12px;
@@ -103,8 +103,8 @@
 		transition: width 0.5s linear;
 	}
 	.agg {
-		background: #f2f5ff;
-		border: 1px solid #c9d4ff;
+		background: var(--agg-bg);
+		border: 1px solid var(--agg-line);
 		border-radius: 8px;
 		padding: 12px 16px;
 		margin: 12px 0;

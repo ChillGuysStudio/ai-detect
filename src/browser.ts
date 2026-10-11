@@ -74,7 +74,7 @@ export async function mintToken(profile: BrowserProfile = "server"): Promise<{ t
     });
     const page = await context.newPage();
     await page.goto(AI_PAGE, { waitUntil: "domcontentloaded", timeout: 30000 });
-    // Wait for the captcha lib instead of a fixed sleep — usually ~1s, not 3.5s.
+    // Wait for the captcha lib instead of a fixed sleep - usually ~1s, not 3.5s.
     await page
       .waitForFunction(
         () => (window as unknown as { grecaptcha?: { execute: unknown } }).grecaptcha?.execute,

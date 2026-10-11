@@ -1,12 +1,15 @@
-/* Design tokens — emil-design-eng rules:
+/* Design tokens - emil-design-eng rules:
  * custom ease-out curves (never bare `ease`), transform+opacity only,
  * semi-transparent layered shadows instead of flat solid borders. */
 :root {
+	color-scheme: light dark;
+
 	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
 	--ink: #101840;
 	--ink-soft: #474d66;
+	--body-text: #232838;
 	--ink-faint: #666d84;
 	--accent: #2952cc;
 	--accent-ink: #fff;
@@ -21,8 +24,51 @@
 	--shadow-sm: 0 1px 2px rgba(16, 24, 64, 0.06), 0 2px 8px rgba(16, 24, 64, 0.06);
 	--shadow-md: 0 2px 4px rgba(16, 24, 64, 0.06), 0 12px 32px rgba(16, 24, 64, 0.12);
 
+	--ghost-bg: rgba(16, 24, 64, 0.07);
+	--track: rgba(16, 24, 64, 0.08);
+	--code-bg: #eef1f8;
+	--agg-bg: #f2f5ff;
+	--agg-line: #c9d4ff;
+	--focus-ring: rgba(41, 82, 204, 0.15);
+
 	--radius: 12px;
 	--radius-sm: 8px;
+}
+
+/* System theme - no in-app toggle; the OS setting wins. */
+@media (prefers-color-scheme: dark) {
+	:root {
+		--ink: #e9ecf5;
+		--ink-soft: #b9c0d4;
+		--body-text: #d5d9e8;
+		--ink-faint: #8f97b0;
+		--accent: #7aa2ff;
+		--accent-ink: #0b1030;
+		--danger: #f07575;
+		--ok: #4cc38a;
+		--warn: #f5b544;
+
+		--surface: #161b2e;
+		--surface-soft: #1c2338;
+		--page: #0d1120;
+		--line: rgba(255, 255, 255, 0.12);
+		--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3);
+		--shadow-md: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.45);
+
+		--ghost-bg: rgba(255, 255, 255, 0.1);
+		--track: rgba(255, 255, 255, 0.12);
+		--code-bg: #232946;
+		--agg-bg: #1a2140;
+		--agg-line: rgba(122, 162, 255, 0.35);
+		--focus-ring: rgba(122, 162, 255, 0.25);
+	}
+}
+
+code {
+	font-family: ui-monospace, monospace;
+	background: var(--code-bg);
+	padding: 1px 5px;
+	border-radius: 4px;
 }
 
 /* Reserve the scrollbar gutter up front: the page must not shift sideways
@@ -38,7 +84,7 @@ code {
 	border-radius: 4px;
 }
 
-/* Pressable elements give instant feedback — scale, never just color. */
+/* Pressable elements give instant feedback - scale, never just color. */
 button {
 	transition:
 		transform 150ms var(--ease-out),

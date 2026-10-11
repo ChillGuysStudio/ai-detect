@@ -1,35 +1,35 @@
-# ai-detect — document AI checker (self-hostable)
+# ai-detect - document AI checker
 
 Upload text or PDF → split into ≤550-word chunks → each chunk checked against
 plagiarismcheck.org's TraceGPT AI detector → live progress + per-chunk results
 → word-weighted aggregate report (on screen + JSON for AI processing).
 
 Upload several files at once: they queue as one batch (one job per file),
-each with live progress. Click a file to preview it — PDFs open the page
+each with live progress. Click a file to preview it - PDFs open the page
 overview (all included, click to ignore, 🔍 to zoom), text files show an
 excerpt. Only selected PDF pages are extracted and queued.
 
-## Quick start (Docker — recommended)
+## Quick start (Docker - recommended)
 
 ```bash
 docker build -t ai-detect .
-docker run -p 3000:3000 ai-detect
+docker run --rm -p 3000:3000 ai-detect
 # open http://localhost:3000
-```
+# Ctrl+C stops it cleanly (nothing left behind thanks to --rm)
 
 The image bundles everything (Bun runtime, Chromium for token minting,
-tesseract + poppler for PDF/OCR) — the host needs only Docker, no browser,
+tesseract + poppler for PDF/OCR) - the host needs only Docker, no browser,
 no Node, nothing else.
 
 Share with friends: run it on your VPS/home server and give them the URL.
-No logins — one global queue (concurrency 1) keeps the upstream IP safe.
+No logins - one global queue (concurrency 1) keeps the upstream IP safe.
 Optional: `docker run -e CAPSOLVER_KEY=...` as token fallback.
 Tune with env (see `.env.example`; Bun loads `.env` automatically,
 Dockerfile values are the fallback when absent):
-`CHUNK_CONCURRENCY` (default 5, max 10 — chunks across all files share one
+`CHUNK_CONCURRENCY` (default 5, max 10 - chunks across all files share one
 pool, so a 3-chunk file and a 1-chunk file overlap),
 `TOKEN_CONCURRENCY` (defaults to chunk concurrency),
-`SUBMIT_GAP_MS` (default 1500 — shared politeness gap between submits).
+`SUBMIT_GAP_MS` (default 1500 - shared politeness gap between submits).
 
 ## Dev
 
@@ -47,20 +47,20 @@ then Playwright's bundled browser. Docker users never touch this.
 
 - **Chunking** (`src/chunk.ts`): sentence-aware greedy pack, target ~450 words,
   hard cap **550**. Each chunk gets its own guest account, so quota isn't the
-  constraint — accuracy sweet spot (200–550w) + progress granularity is.
+  constraint - accuracy sweet spot (200–550w) + progress granularity is.
 - **Queue** (`src/docjobs.ts`): global FIFO (one active job), chunks run in a
-  worker pool — `CHUNK_CONCURRENCY` (default 5, max 10), one browser with
+  worker pool - `CHUNK_CONCURRENCY` (default 5, max 10), one browser with
   parallel contexts (not one Chromium per chunk), fresh guest per chunk,
   shared 1.5s submit throttle (`SUBMIT_GAP_MS`), one retry on paywall.
   A 4-chunk doc completes in ~20s wall vs ~65s sequential.
 - **Tokens** (`src/browser.ts`): one persistent Chromium mints a fresh-context
-  v3 token per chunk (~1–2s), fully server-side and free — this is the method
+  v3 token per chunk (~1–2s), fully server-side and free - this is the method
   in use (client-minted tokens score identically per REPORT.md, but nothing
   needs to provide them). `POST /api/jobs` still accepts an optional
   `manualToken` to seed the first chunk if upstream ever throttles us.
 - **PDF** (`src/pdf.ts`): embedded text layer via pdfjs; pages with <100 chars
   fall back to tesseract OCR (`tesseract` + `pdftoppm` if installed, always in Docker).
-  Uploads open a **page overview**: thumbnails for every page (all included —
+  Uploads open a **page overview**: thumbnails for every page (all included -
   click a page to ignore it, click again to include; 🔍 zooms to a minimal
   content + ✕ view). Only selected pages are extracted and queued.
   API: `POST /api/pdf/preview` → `GET .../thumb/:n` / `page/:n`,
@@ -93,13 +93,13 @@ bun run src/cli.ts --file doc.pdf --pages all --exclude-pages 1,2 --json
 ```
 
 `--json` prints only the result JSON to stdout (logs go to stderr, exit codes
-preserved) — pipe it straight into an LLM. `--list-pages` prints per-page
+preserved) - pipe it straight into an LLM. `--list-pages` prints per-page
 word counts so an agent can pick pages first.
 
 ## MCP (any model with network access)
 
 Same container serves Streamable HTTP MCP at `/mcp` (stateless, shares the
-job queue + browser — no duplicate load). Tools: `submit_document`
+job queue + browser - no duplicate load). Tools: `submit_document`
 (text or base64 PDF + `pages`/`excludePages`), `job_status`, `job_report`,
 `pdf_pages`, `check_text` (short texts, sync). Point any MCP client at
 `http://host:3000/mcp`.

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, fly, scale } from 'svelte/transition';
 	import { pageImageUrl, thumbUrl, type PdfPreview } from './api.js';
+	import SearchIcon from './SearchIcon.svelte';
 	import { easeOut, ms } from './motion.js';
 
 	let {
@@ -64,7 +65,9 @@
 			<span><strong>{preview.name}</strong> · {preview.pages} pages · {preview.words} words</span>
 			<button class="ghost x" onclick={onClose} aria-label="Close page overview">✕</button>
 		</div>
-		<p class="hint">Click a page to ignore it (click again to include). Click 🔍 to zoom in.</p>
+		<p class="hint">
+			Click a page to ignore it (click again to include). Click <SearchIcon size={13} /> to zoom in.
+		</p>
 
 		<div class="grid">
 			{#each preview.info as i, idx (i.page)}
@@ -94,7 +97,7 @@
 							zoom = i.page;
 						}}
 					>
-						🔍
+						<SearchIcon size={15} />
 					</button>
 					<span class="cap" class:off>P{i.page} · {i.words}w {#if off}<em>ignored</em>{/if}</span>
 				</div>
@@ -150,6 +153,9 @@
 		font-size: 0.9em;
 		text-align: center;
 	}
+	.hint :global(svg) {
+		vertical-align: -2px;
+	}
 	button {
 		font: inherit;
 		font-weight: 600;
@@ -161,7 +167,7 @@
 		cursor: pointer;
 	}
 	button.ghost {
-		background: rgba(16, 24, 64, 0.07);
+		background: var(--ghost-bg);
 		color: var(--ink);
 	}
 	.grid {
@@ -197,10 +203,13 @@
 		position: absolute;
 		right: 6px;
 		top: 6px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		background: rgba(16, 24, 64, 0.75);
+		color: #fff;
 		border-radius: 6px;
-		padding: 4px 8px;
-		font-size: 0.95em;
+		padding: 5px;
 	}
 	.cap {
 		display: block;

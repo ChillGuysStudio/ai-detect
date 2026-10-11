@@ -16,9 +16,31 @@ import { extractPdf } from "./pdf.ts";
 import { createPreview, getPreview, pagePng } from "./previews.ts";
 import { excludePages, formatPages, parsePages } from "./pages.ts";
 import { mcpHandler } from "./mcp.ts";
+import { closeBrowser } from "./browser.ts";
 
 const app = new Hono();
 const PORT = Number(process.env.PORT ?? 3000);
+
+// Graceful shutdown: without this, SIGINT/SIGTERM (Ctrl+C, `docker stop`)
+// arrive but the event loop — held open by the persistent Chromium child —
+// never drains, so the container stays alive and stale.
+let shuttingDown = false;
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`received ${signal}, shutting down...`);
+  const force = setTimeout(() => process.exit(1), 5000);
+  try {
+    await closeBrowser();
+  } catch {
+    /* already closed */
+  } finally {
+    clearTimeout(force);
+    process.exit(0);
+  }
+}
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 function clientIp(c: { req: { header(n: string): string | undefined } }): string {
   return (
@@ -42,7 +64,7 @@ app.post("/api/jobs", async (c) => {
   const excludeSpec = (form.get("excludePages") as string) || undefined;
   if (previewId) {
     const prev = getPreview(previewId);
-    if (!prev) return c.json({ error: "preview expired or unknown — re-upload the PDF" }, 404);
+    if (!prev) return c.json({ error: "preview expired or unknown - re-upload the PDF" }, 404);
     try {
       const idx = excludePages(parsePages(pagesSpec, prev.pages), excludeSpec, prev.pages);
       const ex = await extractPdf(prev.bytes, { pages: idx });

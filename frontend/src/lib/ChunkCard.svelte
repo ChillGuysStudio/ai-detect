@@ -128,7 +128,7 @@
 	}
 	.text {
 		line-height: 1.55;
-		color: #232838;
+		color: var(--body-text);
 		white-space: pre-wrap;
 	}
 	mark {

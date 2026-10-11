@@ -1,7 +1,7 @@
 /** Sentence-aware chunker: packs sentences into chunks of at most MAX_WORDS. */
 
 export const MAX_WORDS = 550;
-/** Soft target — leaves headroom so validate() page counts stay in quota. */
+/** Soft target - leaves headroom so validate() page counts stay in quota. */
 export const TARGET_WORDS = 450;
 
 export interface Chunk {
@@ -57,7 +57,7 @@ export function chunkText(text: string, maxWords = MAX_WORDS): Chunk[] {
     curWords += w;
   }
   flush();
-  // A trailing stub (<100 words) would fail site validation — fold it into
+  // A trailing stub (<100 words) would fail site validation - fold it into
   // the previous chunk. May push that chunk past MAX in pathological cases,
   // but that beats a guaranteed-rejected stub.
   const MIN_WORDS = 100;
