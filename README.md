@@ -67,3 +67,9 @@ bun run src/cli.ts --file doc.pdf --pages all --exclude-pages 1,2 --json
 ```
 
 `--json` prints only the result JSON to stdout and sends logs to stderr, so you can pipe it into an LLM. `--list-pages` prints per-page word counts so an agent can pick pages first.
+
+## Screenshots
+
+<img src="docs/1.png" width="600">
+<img src="docs/2.png" width="600">
+<img src="docs/3.png" width="600">
