@@ -50,7 +50,7 @@
 			{/if}
 		</div>
 	{/if}
-	{#if job.status === 'error' && !job.aggregate}
+	{#if job.status === 'error'}
 		<p class="error">Job failed: {job.error ?? 'unknown'}</p>
 	{/if}
 

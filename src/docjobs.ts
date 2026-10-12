@@ -13,6 +13,7 @@ import {
   PaywallError,
 } from "./core.ts";
 import { mintTokenWithFallback } from "./browser.ts";
+import { checkUpstream, isRetryableNetworkError, upstreamMessage } from "./net.ts";
 
 export type ChunkStatus = "queued" | "active" | "done" | "error";
 export type JobStatus = "queued" | "active" | "done" | "error";
@@ -227,11 +228,13 @@ async function runChunkInner(
   opts: { manualToken?: string; capsolverKey?: string },
 ): Promise<void> {
   chunk.status = "active";
-  chunk.attempts++;
   emit(job.id, { type: "chunk-started", jobId: job.id, index: chunk.index });
-  // One retry with a brand-new guest (== clear cookies + Shift+Alt+R).
+  // Up to 3 attempts, each with a brand-new guest. Paywall errors and
+  // transient network failures retry with backoff; validation and token
+  // errors fail immediately since repeating the input cannot fix them.
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    chunk.attempts++;
     const jar = newJar();
     try {
       const csrf = await getCsrf(jar);
@@ -256,12 +259,13 @@ async function runChunkInner(
       return;
     } catch (e) {
       lastErr = e;
-      if (!(e instanceof PaywallError)) break;
-      await Bun.sleep(2000);
+      const retryable = e instanceof PaywallError || isRetryableNetworkError(e);
+      if (!retryable || attempt === 2) break;
+      await Bun.sleep(attempt === 0 ? 2000 : 6000);
     }
   }
   chunk.status = "error";
-  chunk.error = ((lastErr as Error)?.message ?? "unknown").slice(0, 300);
+  chunk.error = upstreamMessage(lastErr);
   emit(job.id, { type: "chunk-error", jobId: job.id, index: chunk.index, chunk: stripText(chunk) });
 }
 
@@ -302,6 +306,8 @@ function aggregate(job: DocJob): Aggregate {
 async function runJob(job: DocJob) {
   const capsolverKey = process.env.CAPSOLVER_KEY;
   const manualToken = (job as DocJob & { manualToken?: string }).manualToken;
+  // Fail fast when the site is unreachable instead of burning every chunk.
+  await checkUpstream();
   let cursor = 0;
   const worker = async (wid: number) => {
     await Bun.sleep(wid * 400); // stagger worker starts
@@ -313,7 +319,7 @@ async function runJob(job: DocJob) {
         await runChunk(job, chunk, { manualToken, capsolverKey });
       } catch (e) {
         chunk.status = "error";
-        chunk.error = ((e as Error)?.message ?? "unknown").slice(0, 300);
+        chunk.error = upstreamMessage(e);
         emit(job.id, { type: "chunk-error", jobId: job.id, index: chunk.index, chunk: stripText(chunk) });
       }
     }

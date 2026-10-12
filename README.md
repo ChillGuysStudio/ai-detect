@@ -73,3 +73,8 @@ bun run src/cli.ts --file doc.pdf --pages all --exclude-pages 1,2 --json
 <img src="docs/1.png" width="600">
 <img src="docs/2.png" width="600">
 <img src="docs/3.png" width="600">
+
+## Troubleshooting
+
+- `cannot reach plagiarismcheck.org (DNS lookup failed)`: the container has no DNS. Fix your Docker DNS, or pass a resolver once with `docker run --rm -p 3000:3000 --dns=8.8.8.8 ai-detect`. Verify with `docker run --rm --entrypoint sh ai-detect -c "getent hosts plagiarismcheck.org"`.
+- `request to plagiarismcheck.org timed out`: transient. Chunks retry automatically with backoff. If every chunk fails, wait and resubmit.
